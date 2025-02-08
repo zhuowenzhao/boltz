@@ -19,7 +19,7 @@ from boltz.data.parse.csv import parse_csv
 from boltz.data.parse.fasta import parse_fasta
 from boltz.data.parse.yaml import parse_yaml
 from boltz.data.types import MSA, Manifest, Record
-from boltz.data.write.writer import BoltzWriter
+from boltz.data.write.writer import BoltzWriter, SetOutputDirCallback
 from boltz.model.model import Boltz1
 
 CCD_URL = "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl"
@@ -669,11 +669,13 @@ def predict(
         output_dir=out_dir / "predictions",
         output_format=output_format,
     )
+    # Save the single embeddings from the trunk
+    embedding_writer = SetOutputDirCallback(out_dir, save_trunk_z=True, save_all_cycles=False)
 
     trainer = Trainer(
         default_root_dir=out_dir,
         strategy=strategy,
-        callbacks=[pred_writer],
+        callbacks=[pred_writer, embedding_writer],
         accelerator=accelerator,
         devices=devices,
         precision=32,

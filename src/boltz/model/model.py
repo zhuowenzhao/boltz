@@ -1,4 +1,4 @@
-import gc
+import gc, os
 import random
 from typing import Any, Dict, Optional
 
@@ -77,6 +77,10 @@ class Boltz1(LightningModule):
         super().__init__()
 
         self.save_hyperparameters()
+
+        self.embd_out_dir = None
+        self.save_trunk_z = False
+        self.save_all_cycles = True
 
         self.lddt = nn.ModuleDict()
         self.disto_lddt = nn.ModuleDict()
@@ -285,6 +289,10 @@ class Boltz1(LightningModule):
             mask = feats["token_pad_mask"].float()
             pair_mask = mask[:, :, None] * mask[:, None, :]
 
+            if self.save_trunk_z:
+                embd_out_dir = self.embd_out_dir / "embedding_s"
+                os.makedirs(embd_out_dir, exist_ok=True)
+
             for i in range(recycling_steps + 1):
                 with torch.set_grad_enabled(self.training and (i == recycling_steps)):
                     # Fixes an issue with unused parameters in autocast
@@ -310,6 +318,15 @@ class Boltz1(LightningModule):
                         pairformer_module = self.pairformer_module
 
                     s, z = pairformer_module(s, z, mask=mask, pair_mask=pair_mask)
+                    if self.save_all_cycles:
+                        print(f'Saving trunk single repr for cycle {i}, its shape {s.shape}')
+                        # Detach and save to the folder
+                        embed_z_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
+                        torch.save(s.detach(), embed_z_path)
+                
+            if not self.save_all_cycles:
+                embed_z_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
+                torch.save(s.detach(), embed_z_path)
 
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
