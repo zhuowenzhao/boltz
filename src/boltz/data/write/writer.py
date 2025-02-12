@@ -70,12 +70,14 @@ class BoltzWriter(BasePredictionWriter):
         # Get the predictions
         coords = prediction["coords"]
         coords = coords.unsqueeze(0)
-
         pad_masks = prediction["masks"]
 
         # Get ranking
-        argsort = torch.argsort(prediction["confidence_score"], descending=True)
-        idx_to_rank = {idx.item(): rank for rank, idx in enumerate(argsort)}
+        idx_to_rank = {}
+        if "confidence_score" in prediction:
+            argsort = torch.argsort(prediction["confidence_score"], descending=True)
+            idx_to_rank = {idx.item(): rank for rank, idx in enumerate(argsort)}
+
 
         # Iterate over the records
         for record, coord, pad_mask in zip(records, coords, pad_masks):
@@ -139,7 +141,7 @@ class BoltzWriter(BasePredictionWriter):
                     plddts = prediction["plddt"][model_idx]
 
                 # Create path name
-                outname = f"{record.id}_model_{idx_to_rank[model_idx]}"
+                outname = f"{record.id}_model_{idx_to_rank[model_idx]}" if idx_to_rank else f"{record.id}_model_no_confidence_rank_{model_idx}"
 
                 # Save the structure
                 if self.output_format == "pdb":
@@ -155,7 +157,7 @@ class BoltzWriter(BasePredictionWriter):
                     np.savez_compressed(path, **asdict(new_structure))
 
                 # Save confidence summary
-                if "plddt" in prediction:
+                if "plddt" in prediction and idx_to_rank:
                     path = (
                         struct_dir
                         / f"confidence_{record.id}_model_{idx_to_rank[model_idx]}.json"
@@ -203,7 +205,7 @@ class BoltzWriter(BasePredictionWriter):
                     np.savez_compressed(path, plddt=plddt.cpu().numpy())
 
                 # Save pae
-                if "pae" in prediction:
+                if "pae" in prediction and idx_to_rank:
                     pae = prediction["pae"][model_idx]
                     path = (
                         struct_dir
@@ -212,7 +214,7 @@ class BoltzWriter(BasePredictionWriter):
                     np.savez_compressed(path, pae=pae.cpu().numpy())
 
                 # Save pde
-                if "pde" in prediction:
+                if "pde" in prediction and idx_to_rank:
                     pde = prediction["pde"][model_idx]
                     path = (
                         struct_dir
@@ -231,15 +233,19 @@ class BoltzWriter(BasePredictionWriter):
 
 
 
-class SetOutputDirCallback(pl.Callback):
+class SetIntermediateOutputCallback(pl.Callback):
     def __init__(self, 
                  output_dir: Path, 
                  save_trunk_z: bool=False,
-                 save_all_cycles: bool=False):
+                 save_all_cycles: bool=False,
+                 stop_after_trunk_embedding: bool=False,
+                 show_time: bool=False):
         super().__init__()
         self.output_dir = output_dir  # Store the output directory
         self.save_trunk_z = save_trunk_z
         self.save_all_cycles = save_all_cycles
+        self.stop_after_trunk_embedding = stop_after_trunk_embedding
+        self.show_time = show_time
 
     def on_predict_start(self, 
                          trainer: Trainer, 
@@ -248,4 +254,13 @@ class SetOutputDirCallback(pl.Callback):
         pl_module.embd_out_dir = self.output_dir  # Set it in the model
         pl_module.save_trunk_z = self.save_trunk_z
         pl_module.save_all_cycles = self.save_all_cycles
-        print(f"Embedding output directory set to: {pl_module.embd_out_dir}")
+        pl_module.stop_after_trunk_embedding = self.stop_after_trunk_embedding
+        pl_module.show_time = self.show_time
+        msg = ''
+        if self.save_trunk_z:
+            msg += f'Setting intermediate outputs:\nSet embedding output directory to: {pl_module.embd_out_dir}'
+        if self.save_all_cycles:
+            msg += '\nSaving single representation for all cycles.'
+        if self.stop_after_trunk_embedding:
+            msg += '\nStop the prediction after the trunk.'
+        print(msg)
