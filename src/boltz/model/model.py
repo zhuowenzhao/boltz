@@ -359,6 +359,10 @@ class Boltz1(LightningModule):
             
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
+            if self.save_trunk_z:
+                print(f'Saving distogram logits after {i} trunk recycling steps')
+                distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
+                torch.save(s.detach(), distogram_path)
 
         # Compute structure module
         if not self.stop_after_trunk_embedding:
