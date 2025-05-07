@@ -547,6 +547,12 @@ def cli() -> None:
     help="Whether to stop the model after saving the single representations out of the trunk."
 )
 @click.option(
+    "--embedding_type_to_save",
+    type=str,
+    help="Which embeding type to save: single, pair, or both. Default is single.",
+    default="single",
+)
+@click.option(
     "--no_confidence_prediction",
     is_flag=True,
     help="Whether to stop before the confidence prediction."
@@ -577,6 +583,7 @@ def predict(
     msa_server_url: str = "https://api.colabfold.com",
     msa_pairing_strategy: str = "greedy",
     stop_after_trunk_embedding: bool = False,
+    embedding_type_to_save: str = "single",
     no_confidence_prediction: bool = False,
     show_time: bool = False,
 ) -> None:
@@ -695,8 +702,9 @@ def predict(
     # create intermediate outputs handler
     intermediate_output_handler = SetIntermediateOutputCallback(
         out_dir, 
-        save_trunk_z=True, 
-        save_all_cycles=False, 
+        save_trunk_z=True,
+        repr_type_to_save=embedding_type_to_save, 
+        save_all_cycles=True, 
         stop_after_trunk_embedding=stop_after_trunk_embedding,
         show_time = show_time,
         )

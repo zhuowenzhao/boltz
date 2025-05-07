@@ -84,6 +84,7 @@ class Boltz1(LightningModule):
         self.save_all_cycles = False
         self.show_time = False
         self.stop_after_trunk_embedding = False
+        self.repr_type_to_save = "single"
         if self.stop_after_trunk_embedding:
             confidence_prediction = False
 
@@ -324,20 +325,30 @@ class Boltz1(LightningModule):
                         pairformer_module = self.pairformer_module
 
                     s, z = pairformer_module(s, z, mask=mask, pair_mask=pair_mask)
-                    if self.save_trunk_z and self.save_all_cycles:
-                        print(f'Saving trunk single repr for cycle {i}, its shape {s.shape}')
-                        # Detach and save to the folder
-                        embed_z_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
-                        torch.save(s.detach(), embed_z_path)
+                    if self.save_trunk_z and self.save_all_cycles and i in [0, 1, 5]:
+                        if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
+                            print(f'Saving single repr for trunk recycle {i}, its shape {s.shape}')
+                            repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
+                            # Detach and save to the folder
+                            torch.save(s.detach(), repr_path)
+                        if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
+                            print(f'Saving pair repr for trunk recycle {i}, its shape {z.shape}')
+                            repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
+                            torch.save(z.detach(), repr_path)
                 
             if self.save_trunk_z and not self.save_all_cycles:
-                embed_z_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
-                torch.save(s.detach(), embed_z_path)
-                print(f'Saved single representation embeddings after {i+1} recycling steps')
+                if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
+                    print(f'Saving single representation embeddings after {i} trunk recycling steps')
+                    repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
+                    torch.save(s.detach(), repr_path)
+                if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
+                    print(f'Saving pair representation embeddings after {i} trunk recycling steps')
+                    repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
+                    torch.save(z.detach(), repr_path)
 
             if self.show_time:
                 embedding_end = time.time()
-                print(f'Going through the trunk with {i+1} recycles takes {embedding_end-embedding_start} s')
+                print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
 
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
