@@ -11,6 +11,7 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.utilities import rank_zero_only
 from tqdm import tqdm
+import time
 
 from boltz.data import const
 from boltz.data.module.inference import BoltzInferenceDataModule
@@ -20,7 +21,7 @@ from boltz.data.parse.csv import parse_csv
 from boltz.data.parse.fasta import parse_fasta
 from boltz.data.parse.yaml import parse_yaml
 from boltz.data.types import MSA, Manifest, Record
-from boltz.data.write.writer import BoltzWriter
+from boltz.data.write.writer import BoltzWriter, SetIntermediateOutputCallback
 from boltz.model.model import Boltz1
 
 CCD_URL = "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl"
@@ -420,6 +421,7 @@ def process_inputs(  # noqa: C901, PLR0912, PLR0915
             if to_generate:
                 msg = f"Generating MSA for {path} with {len(to_generate)} protein entities."
                 click.echo(msg)
+                compute_msa_start = time.time()
                 compute_msa(
                     data=to_generate,
                     target_id=target_id,
@@ -427,6 +429,7 @@ def process_inputs(  # noqa: C901, PLR0912, PLR0915
                     msa_server_url=msa_server_url,
                     msa_pairing_strategy=msa_pairing_strategy,
                 )
+                print(f'Computing MSA takes {time.time()-compute_msa_start}')
 
             # Parse MSA data
             msas = sorted({c.msa_id for c in target.record.chains if c.msa_id != -1})
@@ -604,6 +607,27 @@ def cli() -> None:
     is_flag=True,
     help="Whether to not use potentials for steering. Default is False.",
 )
+@click.option(
+    "--stop_after_trunk_embedding",
+    is_flag=True,
+    help="Whether to stop the model after saving the single representations out of the trunk."
+)
+@click.option(
+    "--embedding_type_to_save",
+    type=str,
+    help="Which embeding type to save: single, pair, or both. Default is single.",
+    default="single",
+)
+@click.option(
+    "--no_confidence_prediction",
+    is_flag=True,
+    help="Whether to stop before the confidence prediction."
+)
+@click.option(
+    "--show_time",
+    is_flag=True,
+    help="show time cost for each module."
+)
 def predict(
     data: str,
     out_dir: str,
@@ -625,6 +649,10 @@ def predict(
     msa_server_url: str = "https://api.colabfold.com",
     msa_pairing_strategy: str = "greedy",
     no_potentials: bool = False,
+    stop_after_trunk_embedding: bool = False,
+    embedding_type_to_save: str = "single",
+    no_confidence_prediction: bool = False,
+    show_time: bool = False,
 ) -> None:
     """Run predictions with Boltz-1."""
     # If cpu, write a friendly warning
@@ -648,6 +676,7 @@ def predict(
 
     # Create output directories
     data = Path(data).expanduser()
+    print(f'Input data path: {data}')
     out_dir = Path(out_dir).expanduser()
     out_dir = out_dir / f"boltz_results_{data.stem}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -743,6 +772,8 @@ def predict(
         msa_module_args=asdict(msa_module_args),
         steering_args=asdict(steering_args),
     )
+    if no_confidence_prediction:    
+        model_module.confidence_prediction = False
     model_module.eval()
 
     # Create prediction writer
@@ -751,11 +782,20 @@ def predict(
         output_dir=out_dir / "predictions",
         output_format=output_format,
     )
+    intermediate_output_handler = SetIntermediateOutputCallback(
+        out_dir, 
+        save_trunk_z=True,
+        repr_type_to_save=embedding_type_to_save, 
+        save_all_cycles=True, 
+        stop_after_trunk_embedding=stop_after_trunk_embedding,
+        show_time = show_time,
+        )
 
+    callback_list = [intermediate_output_handler] if stop_after_trunk_embedding else [intermediate_output_handler, pred_writer]
     trainer = Trainer(
         default_root_dir=out_dir,
         strategy=strategy,
-        callbacks=[pred_writer],
+        callbacks=callback_list,
         accelerator=accelerator,
         devices=devices,
         precision=32,

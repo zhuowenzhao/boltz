@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.callbacks import BasePredictionWriter
 import torch
@@ -231,3 +232,39 @@ class BoltzWriter(BasePredictionWriter):
         """Print the number of failed examples."""
         # Print number of failed examples
         print(f"Number of failed examples: {self.failed}")  # noqa: T201
+
+
+class SetIntermediateOutputCallback(pl.Callback):
+    def __init__(self, 
+                 output_dir: Path, 
+                 save_trunk_z: bool=False,
+                 repr_type_to_save: str="single",
+                 save_all_cycles: bool=False,
+                 stop_after_trunk_embedding: bool=False,
+                 show_time: bool=False):
+        super().__init__()
+        self.output_dir = output_dir  # Store the output directory
+        self.save_trunk_z = save_trunk_z
+        self.repr_type_to_save = repr_type_to_save
+        self.save_all_cycles = save_all_cycles
+        self.stop_after_trunk_embedding = stop_after_trunk_embedding
+        self.show_time = show_time
+
+    def on_predict_start(self, 
+                         trainer: Trainer, 
+                         pl_module: LightningModule):
+        """Pass output_dir to the model before prediction starts."""
+        pl_module.embd_out_dir = self.output_dir  # Set it in the model
+        pl_module.save_trunk_z = self.save_trunk_z
+        pl_module.repr_type_to_save = self.repr_type_to_save
+        pl_module.save_all_cycles = self.save_all_cycles
+        pl_module.stop_after_trunk_embedding = self.stop_after_trunk_embedding
+        pl_module.show_time = self.show_time
+        msg = ''
+        if self.save_trunk_z:
+            msg += f'Setting intermediate outputs:\nSet embedding output directory to: {pl_module.embd_out_dir}'
+        if self.save_all_cycles:
+            msg += f'\nSaving {pl_module.repr_type_to_save} representation for all trunk recycles.'
+        if self.stop_after_trunk_embedding:
+            msg += '\nStop the prediction after the trunk.'
+        print(msg)

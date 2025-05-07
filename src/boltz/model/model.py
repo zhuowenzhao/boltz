@@ -1,6 +1,8 @@
 import gc
+import os
 import random
 from typing import Any, Optional
+import time
 
 import torch
 import torch._dynamo
@@ -80,6 +82,14 @@ class Boltz1(LightningModule):
         super().__init__()
 
         self.save_hyperparameters()
+        self.embd_out_dir = None
+        self.save_trunk_z = False
+        self.save_all_cycles = False
+        self.show_time = False
+        self.stop_after_trunk_embedding = False
+        self.repr_type_to_save = "single"
+        if self.stop_after_trunk_embedding:
+            confidence_prediction = False
 
         self.lddt = nn.ModuleDict()
         self.disto_lddt = nn.ModuleDict()
@@ -269,6 +279,7 @@ class Boltz1(LightningModule):
     ) -> dict[str, Tensor]:
         dict_out = {}
 
+        embedding_start = time.time()
         # Compute input embeddings
         with torch.set_grad_enabled(
             self.training and self.structure_prediction_training
@@ -292,6 +303,9 @@ class Boltz1(LightningModule):
             # Compute pairwise mask
             mask = feats["token_pad_mask"].float()
             pair_mask = mask[:, :, None] * mask[:, None, :]
+            if self.save_trunk_z:
+                embd_out_dir = self.embd_out_dir / "embedding_s"
+                os.makedirs(embd_out_dir, exist_ok=True)
 
             for i in range(recycling_steps + 1):
                 with torch.set_grad_enabled(self.training and (i == recycling_steps)):
@@ -318,23 +332,49 @@ class Boltz1(LightningModule):
                         pairformer_module = self.pairformer_module
 
                     s, z = pairformer_module(s, z, mask=mask, pair_mask=pair_mask)
+                    if self.save_trunk_z and self.save_all_cycles and i in [0, 1, 5]:
+                        if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
+                            print(f'Saving single repr for trunk recycle {i}, its shape {s.shape}')
+                            repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
+                            # Detach and save to the folder
+                            torch.save(s.detach(), repr_path)
+                        if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
+                            print(f'Saving pair repr for trunk recycle {i}, its shape {z.shape}')
+                            repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
+                            torch.save(z.detach(), repr_path)
 
+            if self.save_trunk_z and not self.save_all_cycles:
+                if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
+                    print(f'Saving single representation embeddings after {i} trunk recycling steps')
+                    repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
+                    torch.save(s.detach(), repr_path)
+                if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
+                    print(f'Saving pair representation embeddings after {i} trunk recycling steps')
+                    repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
+                    torch.save(z.detach(), repr_path)
+            
+            if self.show_time:
+                embedding_end = time.time()
+                print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
+            
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
 
         # Compute structure module
-        if self.training and self.structure_prediction_training:
-            dict_out.update(
-                self.structure_module(
-                    s_trunk=s,
-                    z_trunk=z,
-                    s_inputs=s_inputs,
-                    feats=feats,
-                    relative_position_encoding=relative_position_encoding,
-                    multiplicity=multiplicity_diffusion_train,
+        if not self.stop_after_trunk_embedding:
+            if self.training and self.structure_prediction_training:
+                dict_out.update(
+                    self.structure_module(
+                        s_trunk=s,
+                        z_trunk=z,
+                        s_inputs=s_inputs,
+                        feats=feats,
+                        relative_position_encoding=relative_position_encoding,
+                        multiplicity=multiplicity_diffusion_train,
+                    )
                 )
-            )
 
+        structure_start = time.time()
         if (not self.training) or self.confidence_prediction:
             dict_out.update(
                 self.structure_module.sample(
@@ -350,8 +390,13 @@ class Boltz1(LightningModule):
                     steering_args=self.steering_args,
                 )
             )
+            print(dict_out.keys())
+        if self.show_time:
+            confidence_start = time.time()
+            print(f'Going through the structure module (AtomDiffusion) with {diffusion_samples} samples takes {confidence_start-structure_start} s')
 
         if self.confidence_prediction:
+            print(f'confidence prediction {self.confidence_prediction}')
             dict_out.update(
                 self.confidence_module(
                     s_inputs=s_inputs.detach(),
@@ -369,8 +414,12 @@ class Boltz1(LightningModule):
                     run_sequentially=run_confidence_sequentially,
                 )
             )
-        if self.confidence_prediction and self.confidence_module.use_s_diffusion:
-            dict_out.pop("diff_token_repr", None)
+            if self.confidence_prediction and self.confidence_module.use_s_diffusion:
+                dict_out.pop("diff_token_repr", None)
+
+            if self.show_time:
+                print(f'Going through the confidence module with 1 recycle takes {time.time()-confidence_start} s')
+        
         return dict_out
 
     def get_true_coordinates(
@@ -1134,36 +1183,42 @@ class Boltz1(LightningModule):
                 run_confidence_sequentially=True,
             )
             pred_dict = {"exception": False}
-            pred_dict["masks"] = batch["atom_pad_mask"]
-            pred_dict["coords"] = out["sample_atom_coords"]
-            if self.predict_args.get("write_confidence_summary", True):
-                pred_dict["confidence_score"] = (
-                    4 * out["complex_plddt"]
-                    + (
-                        out["iptm"]
-                        if not torch.allclose(
-                            out["iptm"], torch.zeros_like(out["iptm"])
-                        )
-                        else out["ptm"]
-                    )
-                ) / 5
-                for key in [
-                    "ptm",
-                    "iptm",
-                    "ligand_iptm",
-                    "protein_iptm",
-                    "pair_chains_iptm",
-                    "complex_plddt",
-                    "complex_iplddt",
-                    "complex_pde",
-                    "complex_ipde",
-                    "plddt",
-                ]:
-                    pred_dict[key] = out[key]
-            if self.predict_args.get("write_full_pae", True):
-                pred_dict["pae"] = out["pae"]
-            if self.predict_args.get("write_full_pde", False):
-                pred_dict["pde"] = out["pde"]
+            if not self.stop_after_trunk_embedding:
+                if self.confidence_prediction:
+                    pred_dict["masks"] = batch["atom_pad_mask"]
+                    pred_dict["coords"] = out["sample_atom_coords"]
+                    if self.predict_args.get("write_confidence_summary", True):
+                        pred_dict["confidence_score"] = (
+                            4 * out["complex_plddt"]
+                            + (
+                                out["iptm"]
+                                if not torch.allclose(
+                                    out["iptm"], torch.zeros_like(out["iptm"])
+                                )
+                                else out["ptm"]
+                            )
+                        ) / 5
+                        for key in [
+                            "ptm",
+                            "iptm",
+                            "ligand_iptm",
+                            "protein_iptm",
+                            "pair_chains_iptm",
+                            "complex_plddt",
+                            "complex_iplddt",
+                            "complex_pde",
+                            "complex_ipde",
+                            "plddt",
+                        ]:
+                            pred_dict[key] = out[key]
+                    if self.predict_args.get("write_full_pae", True):
+                        pred_dict["pae"] = out["pae"]
+                    if self.predict_args.get("write_full_pde", False):
+                        pred_dict["pde"] = out["pde"]
+                else:
+                    pred_dict["masks"] = batch["atom_pad_mask"]
+                    pred_dict["coords"] = out["sample_atom_coords"]  # make sure the prediction dict has the correct key before writer.
+            
             return pred_dict
 
         except RuntimeError as e:  # catch out of memory exceptions
