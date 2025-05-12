@@ -1,4 +1,4 @@
-import gc, os
+import gc, os, sys
 import random
 from typing import Any, Dict, Optional
 import time
@@ -346,9 +346,6 @@ class Boltz1(LightningModule):
                     repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
                     torch.save(z.detach(), repr_path)
 
-            if self.show_time:
-                embedding_end = time.time()
-                print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
 
             pdistogram = self.distogram_module(z)
             print(f'Saving distogram logits after {i} trunk recycling steps, its shape {pdistogram.shape}')
@@ -356,66 +353,74 @@ class Boltz1(LightningModule):
             torch.save(s.detach(), distogram_path)
             dict_out = {"pdistogram": pdistogram}
 
+            if self.show_time:
+                embedding_end = time.time()
+                print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
+
+
+        if self.stop_after_trunk_embedding:
+            print(f'The job is ended after the trunk.')
+            sys.exit(0)       # Exit with success
         
-        if not self.stop_after_trunk_embedding:
-            # Compute structure module in the training 
-            if self.training and self.structure_prediction_training:
-                dict_out.update(
-                    self.structure_module(
-                        s_trunk=s,
-                        z_trunk=z,
-                        s_inputs=s_inputs,
-                        feats=feats,
-                        relative_position_encoding=relative_position_encoding,
-                        multiplicity=multiplicity_diffusion_train,
-                    )
+        # Compute structure module in the training 
+        if self.training and self.structure_prediction_training:
+            dict_out.update(
+                self.structure_module(
+                    s_trunk=s,
+                    z_trunk=z,
+                    s_inputs=s_inputs,
+                    feats=feats,
+                    relative_position_encoding=relative_position_encoding,
+                    multiplicity=multiplicity_diffusion_train,
                 )
-            structure_start = time.time()
-            # Compute structure module in inference
-            if (not self.training) or self.confidence_prediction:
-                dict_out.update(
-                    self.structure_module.sample(
-                        s_trunk=s,
-                        z_trunk=z,
-                        s_inputs=s_inputs,
-                        feats=feats,
-                        relative_position_encoding=relative_position_encoding,
-                        num_sampling_steps=num_sampling_steps,
-                        atom_mask=feats["atom_pad_mask"],
-                        multiplicity=diffusion_samples,
-                        train_accumulate_token_repr=self.training,
-                    )
+            )
+        structure_start = time.time()
+        # Compute structure module in inference
+        if (not self.training) or self.confidence_prediction:
+            dict_out.update(
+                self.structure_module.sample(
+                    s_trunk=s,
+                    z_trunk=z,
+                    s_inputs=s_inputs,
+                    feats=feats,
+                    relative_position_encoding=relative_position_encoding,
+                    num_sampling_steps=num_sampling_steps,
+                    atom_mask=feats["atom_pad_mask"],
+                    multiplicity=diffusion_samples,
+                    train_accumulate_token_repr=self.training,
                 )
-                print(dict_out.keys())
-            if self.show_time:
-                confidence_start = time.time()
-                print(f'Going through the structure module (AtomDiffusion) with {diffusion_samples} samples takes {confidence_start-structure_start} s')
+            )
+            print(dict_out.keys())
+        if self.show_time:
+            confidence_start = time.time()
+            print(f'Going through the structure module (AtomDiffusion) with {diffusion_samples} samples takes {confidence_start-structure_start} s')
 
-            if self.confidence_prediction:
-                print(f'confidence prediction {self.confidence_prediction}')
-                dict_out.update(
-                    self.confidence_module(
-                        s_inputs=s_inputs.detach(),
-                        s=s.detach(),
-                        z=z.detach(),
-                        s_diffusion=(
-                            dict_out["diff_token_repr"]
-                            if self.confidence_module.use_s_diffusion
-                            else None
-                        ),
-                        x_pred=dict_out["sample_atom_coords"].detach(),
-                        feats=feats,
-                        pred_distogram_logits=dict_out["pdistogram"].detach(),
-                        multiplicity=diffusion_samples,
-                        run_sequentially=run_confidence_sequentially,
-                    )
+        if self.confidence_prediction:
+            print(f'confidence prediction {self.confidence_prediction}')
+            dict_out.update(
+                self.confidence_module(
+                    s_inputs=s_inputs.detach(),
+                    s=s.detach(),
+                    z=z.detach(),
+                    s_diffusion=(
+                        dict_out["diff_token_repr"]
+                        if self.confidence_module.use_s_diffusion
+                        else None
+                    ),
+                    x_pred=dict_out["sample_atom_coords"].detach(),
+                    feats=feats,
+                    pred_distogram_logits=dict_out["pdistogram"].detach(),
+                    multiplicity=diffusion_samples,
+                    run_sequentially=run_confidence_sequentially,
                 )
+            )
 
-            if self.confidence_prediction and self.confidence_module.use_s_diffusion:
-                dict_out.pop("diff_token_repr", None)
+        if self.confidence_prediction and self.confidence_module.use_s_diffusion:
+            dict_out.pop("diff_token_repr", None)
 
-            if self.show_time:
-                print(f'Going through the confidence module with 1 recycle takes {time.time()-confidence_start} s')
+        if self.show_time:
+            print(f'Going through the confidence module with 1 recycle takes {time.time()-confidence_start} s')
+        
         return dict_out
 
     def get_true_coordinates(
