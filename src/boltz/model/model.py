@@ -1,5 +1,6 @@
 import gc
 import os
+import sys
 import random
 from typing import Any, Optional
 import time
@@ -332,7 +333,7 @@ class Boltz1(LightningModule):
                         pairformer_module = self.pairformer_module
 
                     s, z = pairformer_module(s, z, mask=mask, pair_mask=pair_mask)
-                    if self.save_trunk_z and self.save_all_cycles and i in [0, 1, 5]:
+                    if self.save_trunk_z and self.save_all_cycles and i in {0, 1, 5}:
                         if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
                             print(f'Saving single repr for trunk recycle {i}, its shape {s.shape}')
                             repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
@@ -342,41 +343,42 @@ class Boltz1(LightningModule):
                             print(f'Saving pair repr for trunk recycle {i}, its shape {z.shape}')
                             repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
                             torch.save(z.detach(), repr_path)
-
-            if self.save_trunk_z and not self.save_all_cycles:
-                if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
-                    print(f'Saving single representation embeddings after {i} trunk recycling steps')
-                    repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
-                    torch.save(s.detach(), repr_path)
-                if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
-                    print(f'Saving pair representation embeddings after {i} trunk recycling steps')
-                    repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
-                    torch.save(z.detach(), repr_path)
-            
-            if self.show_time:
-                embedding_end = time.time()
-                print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
             
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
             if self.save_trunk_z:
-                print(f'Saving distogram logits after {i} trunk recycling steps')
+                if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
+                    print(f'Saving single representation embeddings after {i} trunk recycling steps, its shape {s.shape}')
+                    repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
+                    torch.save(s.detach(), repr_path)
+                if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
+                    print(f'Saving pair representation embeddings after {i} trunk recycling steps, its shape {z.shape}')
+                    repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
+                    torch.save(z.detach(), repr_path)
+                print(f'Saving distogram logits after {i} trunk recycling steps, its shape {pdistogram.shape}')
                 distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
-                torch.save(s.detach(), distogram_path)
+                torch.save(pdistogram.detach(), distogram_path)
+            
+            if self.show_time:
+                embedding_end = time.time()
+                print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
 
+        if self.stop_after_trunk_embedding:
+            print('The job is ended after trunk embedding')
+            sys.exit(0)
+        
         # Compute structure module
-        if not self.stop_after_trunk_embedding:
-            if self.training and self.structure_prediction_training:
-                dict_out.update(
-                    self.structure_module(
-                        s_trunk=s,
-                        z_trunk=z,
-                        s_inputs=s_inputs,
-                        feats=feats,
-                        relative_position_encoding=relative_position_encoding,
-                        multiplicity=multiplicity_diffusion_train,
-                    )
+        if self.training and self.structure_prediction_training:
+            dict_out.update(
+                self.structure_module(
+                    s_trunk=s,
+                    z_trunk=z,
+                    s_inputs=s_inputs,
+                    feats=feats,
+                    relative_position_encoding=relative_position_encoding,
+                    multiplicity=multiplicity_diffusion_train,
                 )
+            )
 
         structure_start = time.time()
         if (not self.training) or self.confidence_prediction:
