@@ -325,7 +325,7 @@ class Boltz1(LightningModule):
                         pairformer_module = self.pairformer_module
 
                     s, z = pairformer_module(s, z, mask=mask, pair_mask=pair_mask)
-                    if self.save_trunk_z and self.save_all_cycles and i in [0, 1, 5]:
+                    if self.save_trunk_z and self.save_all_cycles and i in {0, 1, 5}:
                         if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
                             print(f'Saving single repr for trunk recycle {i}, its shape {s.shape}')
                             repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
@@ -336,7 +336,7 @@ class Boltz1(LightningModule):
                             repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
                             torch.save(z.detach(), repr_path)
                 
-            if self.save_trunk_z and not self.save_all_cycles:
+            if self.save_trunk_z:
                 if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
                     print(f'Saving single representation embeddings after {i} trunk recycling steps')
                     repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
