@@ -351,6 +351,9 @@ class Boltz1(LightningModule):
                 print(f'Going through the trunk with {i} recycles takes {embedding_end-embedding_start} s')
 
             pdistogram = self.distogram_module(z)
+            print(f'Saving distogram logits after {i} trunk recycling steps, its shape {pdistogram.shape}')
+            distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
+            torch.save(s.detach(), distogram_path)
             dict_out = {"pdistogram": pdistogram}
 
         
