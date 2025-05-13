@@ -336,6 +336,8 @@ class Boltz1(LightningModule):
                             repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
                             torch.save(z.detach(), repr_path)
                 
+            pdistogram = self.distogram_module(z)
+            dict_out = {"pdistogram": pdistogram}
             if self.save_trunk_z:
                 if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
                     print(f'Saving single representation embeddings after {i} trunk recycling steps')
@@ -345,13 +347,10 @@ class Boltz1(LightningModule):
                     print(f'Saving pair representation embeddings after {i} trunk recycling steps')
                     repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
                     torch.save(z.detach(), repr_path)
-
-
-            pdistogram = self.distogram_module(z)
-            print(f'Saving distogram logits after {i} trunk recycling steps, its shape {pdistogram.shape}')
-            distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
-            torch.save(s.detach(), distogram_path)
-            dict_out = {"pdistogram": pdistogram}
+                print(f'Saving distogram logits after {i} trunk recycling steps, its shape {pdistogram.shape}')
+                distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
+                torch.save(pdistogram.detach(), distogram_path)
+            
 
             if self.show_time:
                 embedding_end = time.time()
