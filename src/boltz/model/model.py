@@ -420,11 +420,11 @@ class Boltz1(LightningModule):
                     run_sequentially=run_confidence_sequentially,
                 )
             )
-            if self.confidence_prediction and self.confidence_module.use_s_diffusion:
-                dict_out.pop("diff_token_repr", None)
+        if self.confidence_prediction and self.confidence_module.use_s_diffusion:
+            dict_out.pop("diff_token_repr", None)
 
-            if self.show_time:
-                print(f'Going through the confidence module with 1 recycle takes {time.time()-confidence_start} s')
+        if self.show_time:
+            print(f'Going through the confidence module with 1 recycle takes {time.time()-confidence_start} s')
         
         return dict_out
 
