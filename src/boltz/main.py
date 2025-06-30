@@ -1,4 +1,5 @@
 import os
+import sys
 import pickle
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -22,7 +23,7 @@ from boltz.data.parse.fasta import parse_fasta
 from boltz.data.parse.yaml import parse_yaml
 from boltz.data.types import MSA, Manifest, Record
 from boltz.data.write.writer import BoltzWriter, SetIntermediateOutputCallback
-from boltz.model.model import Boltz1
+
 
 CCD_URL = "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl"
 MODEL_URL = (
@@ -628,6 +629,11 @@ def cli() -> None:
     is_flag=True,
     help="show time cost for each module."
 )
+@click.option(
+    "--preprocessing_only",
+    is_flag=True,
+    help="show time cost for each module."
+)
 def predict(
     data: str,
     out_dir: str,
@@ -653,6 +659,7 @@ def predict(
     embedding_type_to_save: str = "single",
     no_confidence_prediction: bool = False,
     show_time: bool = False,
+    preprocessing_only: bool=False,
 ) -> None:
     """Run predictions with Boltz-1."""
     # If cpu, write a friendly warning
@@ -709,14 +716,17 @@ def predict(
 
     # Process inputs
     ccd_path = cache / "ccd.pkl"
-    process_inputs(
-        data=data,
-        out_dir=out_dir,
-        ccd_path=ccd_path,
-        use_msa_server=use_msa_server,
-        msa_server_url=msa_server_url,
-        msa_pairing_strategy=msa_pairing_strategy,
-    )
+    manifest_path = out_dir / "processed" / "manifest.json"
+    while not manifest_path.exists():
+        print("process inputs")
+        process_inputs(
+            data=data,
+            out_dir=out_dir,
+            ccd_path=ccd_path,
+            use_msa_server=use_msa_server,
+            msa_server_url=msa_server_url,
+            msa_pairing_strategy=msa_pairing_strategy,
+        )
 
     # Load processed data
     processed_dir = out_dir / "processed"
@@ -728,6 +738,9 @@ def predict(
         if (processed_dir / "constraints").exists()
         else None,
     )
+
+    if preprocessing_only:
+        sys.exit(0)
 
     # Create data module
     data_module = BoltzInferenceDataModule(
@@ -761,6 +774,7 @@ def predict(
         steering_args.fk_steering = False
         steering_args.guidance_update = False
 
+    from boltz.model.model import Boltz1
     model_module: Boltz1 = Boltz1.load_from_checkpoint(
         checkpoint,
         strict=True,
