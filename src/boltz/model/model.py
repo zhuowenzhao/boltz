@@ -38,6 +38,7 @@ from boltz.model.modules.trunk import (
 )
 from boltz.model.modules.utils import ExponentialMovingAverage
 from boltz.model.optim.scheduler import AlphaFoldLRScheduler
+from boltz.data.write.utils import blosc2_save
 
 
 class Boltz1(LightningModule):
@@ -333,31 +334,41 @@ class Boltz1(LightningModule):
                         pairformer_module = self.pairformer_module
 
                     s, z = pairformer_module(s, z, mask=mask, pair_mask=pair_mask)
-                    if self.save_trunk_z and self.save_all_cycles and i in {0, 1, 5}:
-                        if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
-                            print(f'Saving single repr for trunk recycle {i}, its shape {s.shape}')
-                            repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
-                            # Detach and save to the folder
-                            torch.save(s.detach(), repr_path)
-                        if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
-                            print(f'Saving pair repr for trunk recycle {i}, its shape {z.shape}')
-                            repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
-                            torch.save(z.detach(), repr_path)
+                    # if self.save_trunk_z and self.save_all_cycles and i in {0, 1, 5}:
+                    #     if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
+                    #         print(f'Saving single repr for trunk recycle {i}, its shape {s.shape}')
+                    #         # repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{i}.pt")
+                    #         # torch.save(s.detach(), repr_path)
+                    #         f_key = f's_repr_cyc_{i}'
+                    #         blosc2_save(s.detach(), f_key, embd_out_dir)
+                    #     if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
+                    #         print(f'Saving pair repr for trunk recycle {i}, its shape {z.shape}')
+                    #         # repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{i}.pt")
+                    #         # torch.save(z.detach(), repr_path)
+                    #         f_key = f'z_repr_cyc_{i}'
+                    #         blosc2_save(z.detach(), f_key, embd_out_dir)
             
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
             if self.save_trunk_z:
                 if self.repr_type_to_save == "both" or self.repr_type_to_save == "single":
                     print(f'Saving single representation embeddings after {i} trunk recycling steps, its shape {s.shape}')
-                    repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
-                    torch.save(s.detach(), repr_path)
+                    # repr_path = os.path.join(embd_out_dir, f"s_repr_cyc_{recycling_steps}.pt")
+                    # torch.save(s.detach(), repr_path)
+                    f_key = f's_repr_cyc_{recycling_steps}'
+                    blosc2_save(s.detach(), f_key, embd_out_dir)
                 if self.repr_type_to_save == "both" or self.repr_type_to_save == "pair":
                     print(f'Saving pair representation embeddings after {i} trunk recycling steps, its shape {z.shape}')
-                    repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
-                    torch.save(z.detach(), repr_path)
+                    # repr_path = os.path.join(embd_out_dir, f"z_repr_cyc_{recycling_steps}.pt")
+                    # torch.save(z.detach(), repr_path)
+                    f_key = f'z_repr_cyc_{recycling_steps}'
+                    blosc2_save(z.detach(), f_key, embd_out_dir)
+                    
                 print(f'Saving distogram logits after {i} trunk recycling steps, its shape {pdistogram.shape}')
-                distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
-                torch.save(pdistogram.detach(), distogram_path)
+                # distogram_path = os.path.join(embd_out_dir, f"distogram_logits_{recycling_steps}.pt")
+                # torch.save(pdistogram.detach(), distogram_path)
+                f_key = f'distogram_logits_{recycling_steps}'
+                blosc2_save(pdistogram.detach(), f_key, embd_out_dir)
             
             if self.show_time:
                 embedding_end = time.time()
