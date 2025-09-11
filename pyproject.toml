@@ -30,6 +30,7 @@ dependencies = [
     "scipy==1.13.1",
     "trifast>=0.1.11",
     "numba==0.61.0",
+    "blosc2==3.7.2"
 ]
 
 [project.scripts]
