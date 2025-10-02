@@ -50,6 +50,6 @@ def blosc2_save(tnr: torch.Tensor, name: str, output_dir: os.PathLike):
     with (out_dir / "metadata.blosc2.json").open("w") as f:
         json.dump(meta, f)
 
-    with (out_dir / f"{name}.blosc2").open("wb") as f:
+    with (out_dir / f"data.blosc2").open("wb") as f:
         f.write(compressed)
 
