@@ -407,7 +407,7 @@ class Boltz1(LightningModule):
                     steering_args=self.steering_args,
                 )
             )
-            print(dict_out.keys())
+
         if self.show_time:
             confidence_start = time.time()
             print(f'Going through the structure module (AtomDiffusion) with {diffusion_samples} samples takes {confidence_start-structure_start} s')

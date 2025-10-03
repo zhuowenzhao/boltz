@@ -263,8 +263,8 @@ class SetIntermediateOutputCallback(pl.Callback):
         msg = ''
         if self.save_trunk_z:
             msg += f'Setting intermediate outputs:\nSet embedding output directory to: {pl_module.embd_out_dir}'
-        if self.save_all_cycles:
-            msg += f'\nSaving {pl_module.repr_type_to_save} representation for all trunk recycles.'
+            if self.save_all_cycles:
+                msg += f'\nSaving {pl_module.repr_type_to_save} representation for all trunk recycles.'
         if self.stop_after_trunk_embedding:
             msg += '\nStop the prediction after the trunk.'
         print(msg)

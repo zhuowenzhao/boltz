@@ -609,9 +609,9 @@ def cli() -> None:
     help="Whether to not use potentials for steering. Default is False.",
 )
 @click.option(
-    "--save_embedding",
+    "--save_embeddings",
     is_flag=True,
-    help="Whether to save (overwrite) the internal trunk embeddings."
+    help="Whether to save (overwrite) the internal trunk embeddings. Default is False."
 )
 @click.option(
     "--stop_after_trunk_embedding",
@@ -660,7 +660,7 @@ def predict(
     msa_server_url: str = "https://api.colabfold.com",
     msa_pairing_strategy: str = "greedy",
     no_potentials: bool = False,
-    save_embedding: bool = False,
+    save_embeddings: bool = False,
     stop_after_trunk_embedding: bool = False,
     embedding_type_to_save: str = "single",
     no_confidence_prediction: bool = False,
@@ -804,7 +804,7 @@ def predict(
     )
     intermediate_output_handler = SetIntermediateOutputCallback(
         out_dir, 
-        save_trunk_z=save_embedding,
+        save_trunk_z=save_embeddings,
         repr_type_to_save=embedding_type_to_save, 
         save_all_cycles=True, 
         stop_after_trunk_embedding=stop_after_trunk_embedding,
